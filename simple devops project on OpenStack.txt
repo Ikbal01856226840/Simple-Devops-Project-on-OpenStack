@@ -1,0 +1,230 @@
+
+++++++++++++++++++++++++++++++
++ DevOps Lab Infrastructure  +
+++++++++++++++++++++++++++++++
+OpenStack Instance
+192.168.0.245
+ubuntu
+ssh-key
+
+Portainer
+https://192.168.0.245:9443
+admin
+*******
+
+Jenkins
+192.168.0.245:8080
+admin
+*******
+
+++++++++++++++++++++++++++++++
+
++++++++++++++++++++++++++++++++++++++++++
++ Run Portainer Container On Docker     +
++++++++++++++++++++++++++++++++++++++++++
+
+#Create the volume to store database:
+
+docker volume create portainer_data
+
+#Run Portainer Container:
+
+docker run -d -p 8000:8000 -p 9443:9443 --name portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce:latest
+
+#Verify docker images
+docker images
+
+#Verify docker container
+docker ps
+
+#Logging In:
+
+https://192.168.0.245:9443
+
++++++++++++++++++++++++++
++ Manage Portainer      +
++++++++++++++++++++++++++
+
+#Logging In Portainer Dashboard:
+
+https://localhost:9443
+
++++++++++++++++++++++++++++++++++++++
+
++++++++++++++++++++++++++++++++++++++
++ Run Jenkins Container on Docker   +
++++++++++++++++++++++++++++++++++++++
+
+#Step 1: Create Folder for Persistent Volumes
+
+mkdir -p /root/myjenkins/jenkins_home
+
+chmod -R 777 /root/myjenkins/jenkins_home
+
+#Step 2: Run the Jenkins Container
+
+docker run -d --name myjenkins -p 8080:8080 -p 50000:50000 --restart=always -v /root/myjenkins/jenkins_home/:/var/jenkins_home jenkins/jenkins:lts
+
+#Check Container List
+
+docker ps
+
+#Step 3: Access the Jenkins Dashboard
+#We Can access the Jenkins dashboard by visiting in our web browser. 
+
+http://DockerHost IP:8080
+
+#Now we can access the browser with the ip of the instance with port 8080.
+#To generate an Administrator password, use the below command.
+#We can find the jenkins password
+
+#docker logs [container_id] or [container_name]
+
+docker logs myjenkins
+
+
+#And Also
+
+docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+
+#We can find in the Jenkins logs.
+
+docker logs myjenkins | less
+
+#Step 4:
+#Enter the password and continue to the next page.
+#Select Install Suggested Plugins on the next page; next, Enter a username and password and click Save and Continue.
+#The next page allows you to change your controller’s hostname. You can accept the default and click Save and Finish.
+
+
+#Step 5: Now create our own admin user.
+
+++++++++++++++++++++++++++++++
+docker stop myjenkins
+docker container prune -f
+++++++++++++++++++++++++++++++
+#Clear the Docker Cache
+docker system prune -a
+++++++++++++++++++++++++++++++
+
+++++++++++++++++++++++++++++++++++++++++++++++++
++ Add Remote Host to Jenkins via SSH           +
+++++++++++++++++++++++++++++++++++++++++++++++++
+
+#This Configuration will on Remote Host machine When we want to using for Password for SSH 
+#Setup root password and SSH configuration on Remotre Host
+
+echo 'root:ubuntu' | chpasswd
+sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+service ssh restart
+
+#Configuring SSH plugin and connection to the remote host
+
+1. Log into Jenkins as the admin user
+
+2. Installing the SSH plugin:
+Navigate to Jenkins Dashboard > Manage Jenkins > Plugins > Available Plugins > search SSH > SSH - Check and Click 'Install or Install after restart' option.
+
+3. Configuring the SSH for remote-user:
+Navigate to Jenkins Dashboard > Manage Jenkins > Credentials  > System > Global Credentials > Add Credentials > Kind: Select as you want? I want, "username with password" > Username: root > Password:****** > Create.
+
+4. Configuring the remote host to be connected via SSH:
+Navigate to Jenkins Dashboard > Manage Jenkins > System > Scroll and Select, "SSH remote hosts" sections > SSH sites > Add > Hostname: Remote-Host IP > Port: Remote-Host SSH Port > Credentials: root (which we create before) > Save.
+
+5. Testing the remote-host connection in the Jenkins build:
+Navigate to Jenkins Dashboard > New Item > Type, a Item name or Job name > select, Freestyle Project > OK. Item name > Configure > We are now configure many things of this sections.
+
+General: Leave as it is (No Configuration )
+
+Source Code Management: Git (Select Git Option and Define Git Repository)
+        Repositories:
+                Repository URL:
+                        https://github.com/SumonPaul18/WebDev.git
+                Credentials: none (when we use public repository)
+                Branches to build: 
+                Branch Specifier (blank for 'any'): */main (type your which branch are you select)
+Now, Click Apply.
+
+Build Triggers: Select > GitHub hook trigger for GITScm polling
+
+Build Environment: Leave as it is (No Configuration )
+
+Build Steps:
+Add build step > Execute shell script on remote host using ssh > Automatic adding: root@192.168.106.4:22 (which we added ssh host before) > Command > Direct type command which we run on that remote-host.
+
+Example (Only for Testing):
+>   command:
+        hostnamectl
+        ip a
+
+Post-build Actions: Leave as it is (No Configuration )
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++  Integrate with GitHub Repository to Jenkins Project  +     
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+#Configuring GitHub:
+
+Step 1: Go to your GitHub repository and click on "Settings".
+
+Step 2: From "Settings" > "Webhooks" > "Add webhook". 
+
+Step 3: in the 'Payload URL' field, paste your Jenkins environment URL. http://192.168.0.89:8080/github-webhook/. In the 'Content type' select 'application/json' and leave the 'Secret' field empty.
+
+#Note: Payload URL IP must have been Public IP and It's Jenkins Server IP and Port.
+#Payload URL:
+http://192.168.0.245:8080/github-webhook/
+    
+Step 4: Now select the events that should trigger the webhook (e.g., push events).
+#Under - Which events would you like to trigger this webhook?
+ • Pull requests
+ • Pushes
+# Active and Update Webhook
+
+#We’re done with the configuration on GitHub’s side!
+
++++++++++++++++++++++++++++++++++++++++++++++
++ Configure Build Step in Jenkins Project   +
++++++++++++++++++++++++++++++++++++++++++++++
+Way 1 +
++++++++
+
+sudo rm -rf WebDev
+# Checkout code from GitHub
+git clone https://github.com/SumonPaul18/WebDev.git
+cd WebDev
+ls
+# Build Docker image
+sudo docker build -t mynginx .
+sudo docker stop web1
+sudo docker container prune -f
+sudo docker run -dit --name web1 -p 8081:80 mynginx
+#docker run -dit --name web1 -p 8081:80 -v /root/WebDev/:/usr/share/nginx/html/ mynginx
+sudo docker ps
+
+
++++++++++++++++++++++++++++++++++++++
++ Check in Now Publish The WebSite
++++++++++++++++++++++++++++++++++++++
+
+Go to a Browser > and Type OpenStack Instance Floating IP with Web1 Container Port 8081
+http://192.168.0.245:8081
+
+
++++++++++++++++++++++++++++++++++++++
++ Jenkins Error & Troubleshootings  +
++++++++++++++++++++++++++++++++++++++
+
+Error: An error occurred during Jenkins build: ERROR: Failed to install JDK. Exit code=2
+
+#Solution:
+
+java -version
+which java
+echo $JAVA_HOME
+/opt/java/openjdk
+
++++++++++++++++++++++++++++++++++++++
+
+
+
